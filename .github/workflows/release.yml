@@ -45,9 +45,9 @@ jobs:
           dist/*.AppImage
     - name: Upload artifacts to tag
       run: |
-        node scripts/upload-to-github-releases.mjs TurboWarp desktop "dist/*.deb"
-        node scripts/upload-to-github-releases.mjs TurboWarp desktop "dist/*.tar.gz"
-        node scripts/upload-to-github-releases.mjs TurboWarp desktop "dist/*.AppImage"
+        node scripts/upload-to-github-releases.mjs MistWarp desktop "dist/*.deb"
+        node scripts/upload-to-github-releases.mjs MistWarp desktop "dist/*.tar.gz"
+        node scripts/upload-to-github-releases.mjs MistWarp desktop "dist/*.AppImage"
       env:
         GH_TOKEN: "${{ github.token }}"
 
@@ -117,7 +117,7 @@ jobs:
         path: dist/*.dmg
     - name: Upload artifacts to tag
       run: |
-        node scripts/upload-to-github-releases.mjs TurboWarp desktop "dist/*.dmg"
+        node scripts/upload-to-github-releases.mjs MistWarp desktop "dist/*.dmg"
       env:
         GH_TOKEN: "${{ github.token }}"
 
@@ -128,6 +128,8 @@ jobs:
     # We want to use the D: drive whenever we can. Trying to do "npm ci" on the C:
     # drive has been observed to take over an hour!
     runs-on: windows-latest
+    env:
+      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
     steps:
     # actions/checkout can only clone to paths in $GITHUB_WORKSPACE which is on the C: drive,
     # so we have to clone to C: then copy to D: after. This repository itself isn't huge so
@@ -184,13 +186,15 @@ jobs:
     - name: Upload unsigned artifacts for SignPath
       uses: actions/upload-artifact@v4
       id: signpath-unsigned
+      if: env.SIGNPATH_API_TOKEN != ''
       with:
         name: artifact-for-signpath
         # keep this list in sync with the signed artifiact upload below
         path: |
-          D:\repo\dist\TurboWarp-Setup*x64.exe
+          D:\repo\dist\MistWarp-Setup*x64.exe
     - name: Sign executables with SignPath
       uses: signpath/github-action-submit-signing-request@4f13d373e8f0cd8d3c0465ff4877feff27aed2ae
+      if: env.SIGNPATH_API_TOKEN != ''
       with:
         api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
         organization-id: 04444052-261e-46eb-8168-ed0eee93c57c
@@ -203,14 +207,24 @@ jobs:
         output-artifact-directory: D:\repo\dist
     - name: Upload signed artifacts to GitHub Actions
       uses: actions/upload-artifact@v4
+      if: env.SIGNPATH_API_TOKEN != ''
       with:
         name: windows-signed
         # keep this list in sync with the signpath artifact upload above
         path: |
-          D:\repo\dist\TurboWarp-Setup*x64.exe
+          D:\repo\dist\MistWarp-Setup*x64.exe
     - name: Upload signed artifacts to tag
       working-directory: D:\repo
+      if: env.SIGNPATH_API_TOKEN != ''
       run: |
-        node scripts/upload-to-github-releases.mjs TurboWarp desktop "dist/*.exe"
+        node scripts/upload-to-github-releases.mjs MistWarp desktop "dist/*.exe"
+      env:
+        GH_TOKEN: "${{ github.token }}"
+
+    - name: Upload unsigned artifacts to tag (no SignPath)
+      working-directory: D:\repo
+      if: env.SIGNPATH_API_TOKEN == ''
+      run: |
+        node scripts/upload-to-github-releases.mjs MistWarp desktop "dist/*.exe"
       env:
         GH_TOKEN: "${{ github.token }}"
