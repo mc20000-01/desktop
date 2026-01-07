@@ -91,7 +91,10 @@ module.exports = [
             })
         ],
         resolve: {
+            symlinks: false,
             alias: {
+                react: path.resolve(__dirname, 'node_modules/react'),
+                'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),
                 'scratch-gui$': path.resolve(__dirname, 'node_modules/scratch-gui/src/index.js'),
                 'scratch-render-fonts$': path.resolve(__dirname, 'node_modules/scratch-gui/src/lib/tw-scratch-render-fonts'),
             }
@@ -105,6 +108,13 @@ module.exports = [
             filename: 'index.js'
         },
         entry: './src-renderer-webpack/editor/addons/index.jsx',
+        resolve: {
+            symlinks: false,
+            alias: {
+                react: path.resolve(__dirname, 'node_modules/react'),
+                'react-dom': path.resolve(__dirname, 'node_modules/react-dom')
+            }
+        },
         plugins: [
             new CopyWebpackPlugin({
                 patterns: [

@@ -55,46 +55,7 @@ class ProjectRunningWindow extends AbtractWindow {
   }
 
   async handlePermissionRequest (permission, details) {
-    // Attempting to record video or audio
-    if (permission === 'media') {
-      // mediaTypes is not guaranteed to exist
-      const mediaTypes = details.mediaTypes || [];
-      for (const mediaType of mediaTypes) {
-        const hasPermission = await askForMediaAccess(this.window, mediaType);
-        if (!hasPermission) {
-          return false;
-        }
-      }
-      return true;
-    }
-
-    // Clipboard extension
-    if (permission === 'clipboard-read') {
-      return SecurityPromptWindow.requestReadClipboard(this.window);
-    }
-
-    // Notifications extension
-    if (permission === 'notifications') {
-      return SecurityPromptWindow.requestNotifications(this.window);
-    }
-
-    return (
-      // Enhanced fullscreen addon
-      permission === 'fullscreen' ||
-
-      // Pointerlock extension and experiment
-      permission === 'pointerLock' ||
-
-      // Clipboard extension
-      // Writing is safer than reading
-      permission === 'clipboard-sanitized-write' ||
-
-      // Wake Lock extension
-      permission === 'screen-wake-lock' ||
-
-      // Backpack, restore points want persistent storage
-      permission === 'persistent-storage'
-    );
+    return true;
   }
 
   onBeforeRequest (details, callback) {

@@ -24,6 +24,7 @@ SOFTWARE.
 */
 
 const net = require('net');
+const os = require('os');
 const pathUtil = require('path');
 const nodeCrypto = require('crypto');
 const {APP_NAME} = require('./brand');
@@ -33,7 +34,7 @@ const settings = require('./settings');
 
 // Ask GarboMuffin for changes
 // https://discord.com/developers/applications
-const APPLICATION_ID = '1243008354037665813';
+const APPLICATION_ID = '1458217703742378044';
 const LARGE_IMAGE_NAME = 'icon';
 
 const OP_HANDSHAKE = 0;
@@ -57,30 +58,52 @@ const getSocketPaths = (i) => {
   }
 
   // All other platforms are Unix-like
-  const tempDir = (
-    process.env.XDG_RUNTIME_DIR ||
-    process.env.TMPDIR ||
-    process.env.TMP ||
-    process.env.TEMP ||
-    '/tmp'
-  );
+  const tempDirs = [];
+
+  // Prefer environment variables when available.
+  if (process.env.XDG_RUNTIME_DIR) tempDirs.push(process.env.XDG_RUNTIME_DIR);
+  if (process.env.TMPDIR) tempDirs.push(process.env.TMPDIR);
+  if (process.env.TMP) tempDirs.push(process.env.TMP);
+  if (process.env.TEMP) tempDirs.push(process.env.TEMP);
+
+  // Node's idea of the temp directory.
+  try {
+    tempDirs.push(os.tmpdir());
+  } catch {
+    // ignore
+  }
+
+  // Electron's idea of the temp directory (can differ from env vars when launched from Finder).
+  try {
+    // Imported lazily to avoid any potential circular issues in unusual startup modes.
+    const {app} = require('electron');
+    if (app && typeof app.getPath === 'function') {
+      tempDirs.push(app.getPath('temp'));
+    }
+  } catch {
+    // ignore
+  }
+
+  // Absolute fallback.
+  tempDirs.push('/tmp');
+
+  // De-duplicate while preserving order.
+  const uniqueTempDirs = tempDirs.filter((dir, index) => dir && tempDirs.indexOf(dir) === index);
 
   // There are a lot of ways to install Discord on Linux
   if (process.platform === 'linux') {
     return [
       // Native
-      pathUtil.join(tempDir, `discord-ipc-${i}`),
+      ...uniqueTempDirs.map((dir) => pathUtil.join(dir, `discord-ipc-${i}`)),
       // Flatpak
-      pathUtil.join(tempDir, `app/com.discordapp.Discord/discord-ipc-${i}`),
+      ...uniqueTempDirs.map((dir) => pathUtil.join(dir, `app/com.discordapp.Discord/discord-ipc-${i}`)),
       // Snap
-      pathUtil.join(tempDir, `snap.discord/discord-ipc-${i}`),
+      ...uniqueTempDirs.map((dir) => pathUtil.join(dir, `snap.discord/discord-ipc-${i}`)),
     ];
   }
 
   // macOS and, theoretically, other Unixes
-  return [
-    pathUtil.join(tempDir, `discord-ipc-${i}`)
-  ];
+  return uniqueTempDirs.map((dir) => pathUtil.join(dir, `discord-ipc-${i}`));
 };
 
 /**
@@ -92,6 +115,7 @@ const tryOpenSocket = (path) => {
     const socket = net.connect(path);
     const onConnect = () => {
       removeListeners();
+      socket._twDiscordIpcPath = path;
       resolve(socket);
     };
     const onError = (error) => {
@@ -117,18 +141,22 @@ const tryOpenSocket = (path) => {
  * @returns {Promise<net.Socket>}
  */
 const findIPCSocket = async () => {
+  const triedPaths = [];
   for (let i = 0; i < 10; i++) {
     for (const path of getSocketPaths(i)) {
+      triedPaths.push(path);
       try {
-        return await tryOpenSocket(path)
+        return await tryOpenSocket(path);
       } catch (e) {
         // keep trying the next one
-        console.error('Error connecting to rich presence IPC', e);
+        console.error('[RichPresence] Error connecting to IPC path:', path, e);
       }
     }
   }
 
-  throw new Error('All paths failed');
+  const error = new Error('All paths failed');
+  error.triedPaths = triedPaths;
+  throw error;
 };
 
 class RichPresence {
@@ -231,6 +259,9 @@ class RichPresence {
       this.socket = await findIPCSocket();
     } catch (e) {
       console.error('Could not connect to rich presence RPC', e);
+      if (e && Array.isArray(e.triedPaths)) {
+        console.error('Rich presence tried IPC paths:', e.triedPaths);
+      }
       this.stopFurtherWrites();
       this.reconnect();
       return;
@@ -405,6 +436,10 @@ class RichPresence {
       case OP_FRAME: {
         if (data.evt === 'READY') {
           this.handleReady();
+        } else if (data.evt === 'ERROR') {
+          // Discord can respond with error frames (eg. invalid client ID, bad activity payload).
+          // Log them so failures are diagnosable outside of DevTools.
+          console.error('Rich presence IPC error frame', data);
         } else if (data.cmd === 'SET_ACTIVITY') {
           // They send us an acknowledgement; ignore it
         } else {
@@ -439,10 +474,9 @@ class RichPresence {
     this.activityTitle = title;
     this.activityStartTime = startTime;
 
-    // The first time we receive a valid title is when automatic connection is possible.
-    if (this.activityTitle) {
-      this.checkAutomaticEnable();
-    }
+    // If the user enabled rich presence previously, connect as soon as we get *any* activity
+    // update. Discord will accept an empty title (we fall back to "Untitled" in writeActivity).
+    this.checkAutomaticEnable();
 
     if (this.canWrite() && !this.activityTimeout) {
       this.writeActivity();
